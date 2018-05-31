@@ -1,5 +1,6 @@
 # 1-D Inversion of TEM data
 ![Data](doc/scheme.png)
+(R.-U. Börner, 2018)
 
 ## Introduction
 This repository contains a MATLAB implementation for the one-dimensional (1-D) inversion of transient electromagnetic (TEM) data.
@@ -65,11 +66,10 @@ Both functions use the following parameter-value pairs with the associated defau
 | `'linesearch-threshold'` | `1e-6` | search direction p can be scaled down until it drops  below `p * linesearch_threshold`|
 | `'armijo_c1'` | `1e-4` | Armijo control factor: reduce step length until objective function difference is less than `armijo_c1 * linesearch_step_length * directional_derivative` |
 | `'verbose'` | `true` | if true, the function generates more diagnostic output|
+| `'t0'` | `0.0` | transient ramp time provided by the PROTEM receiver (**`PROTEM_1D_Inversion` only**)|
+
 
 ## Examples
-```matlab
-s = tic()
-```
 
 ### Taylor test of the Jacobian
 ```matlab
@@ -203,3 +203,52 @@ The evaluation of the above code should provide the following figures:
 ![Models](doc/models.png)
 
 ![Iterations](doc/iterations.png)
+
+### Inversion of PROTEM data
+
+```matlab
+% provide field data
+load data/transients_stacked.mat
+records = data_stacked(ismember(data_stacked.date, '21.02.'), :);
+t    = records.t{1};
+dobs = records.Z_field{12};
+
+% Observation point
+r    = 280;
+
+% Starting model, 12 layers
+nl = 12;
+rho_guess = 100 * ones(nl, 1);
+thk_guess = 10 * ones(nl - 1, 1);
+
+% Iterate
+[rho_new, obj_fn] = PROTEM_1D_Inversion( ...
+    'data', dobs, ...
+    't0', 57e-6, ...
+    'obs', r, ...
+    'times', t, ...
+    'rho', rho_guess, ...
+    'thickness', thk_guess, ...
+    'fix', [1 0 0 0 0 0 0 0 0 0 0 0], ...
+    'scale_asinh', 1e-12, ...
+    'goal_obj', 1e-2, ...
+    'goal_obj_diff', 1e-4, ...
+    'lambda_threshold', 1e-2, ...
+    'verbose', true);
+
+% Plot convergence
+figure(3);
+semilogy(obj_fn ./ obj_fn(1));
+xlabel('Iteration');
+ylabel('Rel. objective function');
+grid();
+xlim([1 length(obj_fn) + 1]);
+```
+
+Again, the successful evaluation of the above code should provide figures similar to
+
+![Data](doc/protem_data.png)
+
+![Models](doc/protem_models.png)
+
+![Iterations](doc/protem_iterations.png)
