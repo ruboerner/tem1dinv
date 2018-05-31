@@ -9,10 +9,7 @@ records = data_stacked(ismember(data_stacked.date, '21.02.'), :);
 
 t    = records.t{1};
 dobs = records.Z_field{12};
-r    = 280; % FIXME
-
-% t = t(10:end);
-% dobs = dobs(10:end);
+r    = 280;
 
 %%
 nl = 12;
