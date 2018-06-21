@@ -7,7 +7,10 @@ addParameter(p, 'data', [], @isnumeric);
 addParameter(p, 'times', [], @isnumeric);
 addParameter(p, 't0', 0.0, @isnumeric);
 addParameter(p, 'obs', [], @isnumeric);
+addParameter(p, 'depth', [], @isnumeric);
 addParameter(p, 'rho', [], @isnumeric);
+addParameter(p, 'coil_length',1,@isnumeric);
+addParameter(p, 'ng',10,@isnumeric);
 
 addParameter(p, 'thickness', [], @isnumeric);
 addParameter(p, 'fix', [], @isnumeric);
@@ -16,6 +19,7 @@ addParameter(p, 'verbose', true, @islogical);
 addParameter(p, 'maxit', 1e2, @isnumeric);
 
 addParameter(p, 'lambda', 1e2, @isnumeric);
+addParameter(p, 'lambda_min', 1e-12, @isnumeric);
 addParameter(p, 'reduce_lambda', 1e-1, @isnumeric);
 addParameter(p, 'lambda_threshold', 1e-1, @isnumeric);
 
@@ -46,6 +50,8 @@ assert(length(t) == length(dobs), 'Data and times not equal.');
 r = p.Results.obs;
 assert(r > 0.0, 'r must be > 0.');
 
+z = p.Results.depth;
+
 rho = p.Results.rho;
 assert(~isempty(rho), 'Missing starting model layer resistivities.');
 
@@ -57,6 +63,8 @@ fix = p.Results.fix;
 assert(length(fix) == length(rho), 'Wrong number of fixed params.');
 assert(~all(fix), 'At least one parameter must be free.');
 
+ng = p.Results.ng;
+L = p.Results.coil_length;
 if isempty(fix)
     fix = zeros(size(rho));
 end
@@ -73,6 +81,7 @@ verbose = p.Results.verbose;
 max_gn_iterations = p.Results.maxit;
 
 lambda = p.Results.lambda;
+lambda_min = p.Results.lambda_min;
 lambda_scaling_factor = p.Results.reduce_lambda;
 lambda_droptol = p.Results.lambda_threshold;
 
@@ -105,12 +114,11 @@ tref = logspace(floor(log10(tmin)), ceil(log10(tmax)), nt_);
 
 % Some useful function handles
 %
-getData = @(rho) interp_transient( ...
-    tref, ...
-    getVMDLayeredTransient([tstart tend], r, rho, thk, 0.0, 1.0), ...
-    t);
 
-getData = @(rho) simulate_PROTEM(t, r, rho, thk, t0);
+
+
+[x,w] = gauleg(-L/2,L/2,ng);
+getData = @(rho) simulate_PROTEMSQLOOP(t, r, rho, thk, t0, z,x,w,L);
 
 residual = @(dobs, d, a) scalefn(dobs, a) - scalefn(d, a);
 data_norm = @(r) 0.5 * norm(r)^2;
@@ -167,6 +175,7 @@ while ( ...
         'thickness', thk, ...
         'times', t, ...
         'obs', r, ...
+        'depth',z,...
         'scale_asinh', a, ...
         'pert', pert, ...
         'protem', true, ...
@@ -226,6 +235,9 @@ while ( ...
         lambda = lambda * lambda_scaling_factor;
     end
     
+    if lambda < lambda_min
+        lambda = lambda_min;
+    end
     if verbose
         fprintf('alpha=%1.2e | lambda=%1.2e | obj_fn=%1.3e | diff_obj=%1.3e\n', ...
             step_size, lambda, obj_fn_current, diff_obj_fn);
