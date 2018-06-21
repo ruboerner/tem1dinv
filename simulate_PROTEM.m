@@ -1,4 +1,4 @@
-function dBzdt = simulate_PROTEM(t, r, rho, thk, t0)
+function dBzdt = simulate_PROTEM(t, r, rho, thk, t0, z)
 %simulatePROTEM(t, r, rho, thk, t0)
 [tmin, tmax] = minmax(t);
 lmi = floor(log10(tmin));
@@ -9,6 +9,6 @@ tend = 10^lma;
 tref = logspace(floor(log10(tmin)), ceil(log10(tmax)), nt_);
 v = interp_transient( ...
         tref, ...
-        getVMDLayeredTransient([tstart tend], r, rho, thk, 0.0, 1.0), ...
+        getVMDLayeredTransient([tstart tend], r, rho, thk, z, 1.0), ...
         t);
 dBzdt = correctRampTime(t, v, t0);

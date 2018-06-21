@@ -8,6 +8,7 @@ addParameter(p, 'data', [], @isnumeric);
 addParameter(p, 'times', [], @isnumeric);
 addParameter(p, 't0', 0.0, @isnumeric);
 addParameter(p, 'obs', [], @isnumeric);
+addParameter(p, 'depth', 0, @isnumeric);
 addParameter(p, 'rho', [], @isnumeric);
 addParameter(p, 'thickness', [], @isnumeric);
 addParameter(p, 'scale_data', @asinh, @(x) isa(x, 'function_handle'));
@@ -24,6 +25,7 @@ a = p.Results.scale_asinh;
 rho = p.Results.rho;
 thk = p.Results.thickness;
 r = p.Results.obs;
+z = p.Results.depth;
 t = p.Results.times;
 d = p.Results.data;
 t0 = p.Results.t0;
@@ -32,7 +34,7 @@ pert = p.Results.pert;
 scalefn = @(x, a) scale_data(x ./ a);
 
 if protem
-    getData = @(rho) simulate_PROTEM(t, r, rho, thk, t0);
+    getData = @(rho) simulate_PROTEM(t, r, rho, thk, t0, z);
 else
     tstart = t(1);
     tend = t(end);
