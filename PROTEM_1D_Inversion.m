@@ -60,14 +60,16 @@ assert(length(thk) == length(rho) - 1, 'Wrong layer thicknesses.');
 
 fix = p.Results.fix;
 
+if isempty(fix)
+    fix = zeros(size(rho));
+end
+
 assert(length(fix) == length(rho), 'Wrong number of fixed params.');
 assert(~all(fix), 'At least one parameter must be free.');
 
 ng = p.Results.ng;
 L = p.Results.coil_length;
-if isempty(fix)
-    fix = zeros(size(rho));
-end
+
 
 update = ~fix;
 P = eye(length(rho));
@@ -214,7 +216,8 @@ while ( ...
     while (diff_obj_fn < -c1 * step_size * dir_deriv)
         step_size = step_size / 2.0;
         if step_size < ls_drop
-            error('Line search breakdown. Exit.');
+%             error('Line search breakdown. Exit.');
+                break;
         end
         log_p_ = log_p + step_size * gn_dir;
         d_ = getData(exp(log_p_));
@@ -244,9 +247,9 @@ while ( ...
         
         figure(1);
         loglog(t, abs(dobs), t, abs(d));
-        plotTransient(t, dobs, [], 'r');
+        plotTransient(t, dobs, [], [1 0 0]);
         hold on
-        plotTransient(t, d, [], 'b');
+        plotTransient(t, d, [], [0 0 1]);
         %     grid('on');
         legend('dobs', '', 'd', '');
         hold off
