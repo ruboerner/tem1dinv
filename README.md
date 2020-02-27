@@ -46,15 +46,15 @@ Both functions use the following parameter-value pairs with the associated defau
 
 | Parameter | Default value | Explanation |
 ------------|----------------|------------|
-| `'data'` | `[]` | normalized transient data dBz/dt in $V/Am^2$|
+| `'data'` | `[]` | normalized transient data dBz/dt in $V/Am^4$|
 | `'times'` | `[]` | transient times in s|
 | `'obs'` | `[]` | transmitter-receiver offset in m|
 | `'rho'` | `[]` | starting model layer resistivities in Ohm*m|
 | `'thickness'` | `[]` | starting model layer thicknesses in m|
 | `'fix'` | `[]` | index of layer the resistivy of which is held fixed|
 | `'lambda'` | `1e2` | initial value of regularization parameter|
-| `'reduce_lambda'` | `1e-1` | factor by which lambda is multiplied when the difference of the objective function between subsequent iterations drops below a value given by `lambda_threshold`|
-| `'lambda_threshold'` | `1e-1` | lambda drop tolerance, see `reduce_lambda` |
+| `'reduce_lambda'` | `1e-1` | factor by which lambda is multiplied when the relative change of the objective function between subsequent iterations drops below the value given by `lambda_threshold`|
+| `'lambda_threshold'` | `3e-1` | lambda drop tolerance, see `reduce_lambda` |
 | `'lambda_min'` | `1e-12` | least permitted value for `lambda`|
 | `'pert'` | `1e-6` | relative change in parameter when Jacobian is approximated using small perturbations|
 | `'scale_data'` | `@asinh` | function handle for transformation of data and model response |
@@ -129,7 +129,6 @@ xlabel('h')
 ylabel('norm of error functional')
 ylim([1e-15 10])
 set(gca, 'XDir', 'reverse');
-
 ```
 The evaluation of the above code should provide the following figure:
 
