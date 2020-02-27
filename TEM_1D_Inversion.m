@@ -1,4 +1,4 @@
-function [m, obj_fn] = TEM_1D_Inversion(varargin)
+function [m, obj_fn, lambda_history] = TEM_1D_Inversion(varargin)
 %TEM_1D_Inversion inversion of synthetic TEM data
 %
 
@@ -63,10 +63,9 @@ end
 update = ~fix;
 P = eye(length(rho));
 if ~all(update)
-        P(find(~update), :) = [];
+    P(find(~update), :) = []; %#ok
 end
-R = eye(min(size(P')));
-
+WTW = eye(min(size(P')));
 
 verbose = p.Results.verbose;
 max_gn_iterations = p.Results.maxit;
@@ -88,27 +87,19 @@ tol = p.Results.goal_normgc;
 obj_fn_goal = p.Results.goal_obj;
 goal_obj_diff = p.Results.goal_obj_diff;
 
-rho_ref = 1 * ones(size(rho));
-
-
 % Some useful function handles
 %
 getData = @(rho) getVMDLayeredTransient([t(1) t(end)], r, rho, thk, 0.0, 1.0);
-% scalefn = @(x, a) asinh(x ./ a);
-residual = @(dobs, d, a) scalefn(dobs, a) - scalefn(d, a);
-data_norm = @(r) 0.5 * norm(r)^2;
-model_norm = @(W, m, lambda) 0.5 * lambda * m' * W' * W * m;
-objective_function = @(r, W, m, lambda) data_norm(r) + 0 * model_norm(W, m, lambda); %% RUB was 0!
 
-% First (G, gradient) and second (W) derivative of model parameters wrt to
-% depth, as well as identity matrix (I) of compatible dimension
-%
-W = eye(length(rho));
+residual = @(dobs, d, a) scalefn(dobs, a) - scalefn(d, a);
+
+data_norm = @(r) 0.5 * norm(r)^2;
+
+objective_function = @(r) data_norm(r);
 
 % Transform model parameters, here we take the natural log of rho
 %
 log_p = log(rho);
-log_p_ref = log(rho_ref);
 
 % Calculate response of starting model
 %
@@ -119,12 +110,12 @@ d = getData(rho);
 data_residual = residual(dobs, d, a);
 
 obj_fn_current = ...
-    data_norm(data_residual) + ...
-    0 * model_norm(W, log_p - log_p_ref, lambda);
+    data_norm(data_residual);
 
 % Initialize GN monitoring
 %
 obj_fn = zeros(max_gn_iterations, 1);
+lambda_history = zeros(max_gn_iterations, 1);
 norm_gc = Inf();
 obj_fn_diff = Inf();
 
@@ -132,9 +123,14 @@ gn_it_counter = 0;
 
 obj_fn(1) = obj_fn_current;
 
-% GN starts here
+% Gauss-Newton iterations start here.
+% Iterations will be carried out as long as
+% 
+% - the norm of the gradient J^T * r is larger than a predefined tolerance
+% - maximum iteration is not reached
+% - the norm of the objective function is larger than a predefined value
+% - the difference between subsequent doesn't fall below a threshold.
 %
-
 while (norm_gc > tol) && ...
         (gn_it_counter < max_gn_iterations) && ...
         (obj_fn_current > obj_fn_goal) && ...
@@ -143,8 +139,8 @@ while (norm_gc > tol) && ...
     % We have data d, current model log_p, and have evaluated the objective
     % function.
     %
-    % Jacobian J = du/dm * dm / drho
-%     J = getJ(d, exp(log_p), thk, t, r, @asinh, a);
+    % Jacobian is defined as J = du/dm * dm / drho.
+    %
     J = getJ('data', d, ...
         'rho', exp(log_p), ...
         'thickness', thk, ...
@@ -154,33 +150,38 @@ while (norm_gc > tol) && ...
         'scale_asinh', a, ...
         'protem', false);
     
+    % Restrict problem to "active" model parameters by only keeping associated columns of J
+    %
     J = J * P';
     
-    % Gradient
+    % Gradient J^T * r = -\grad \Phi
+    %
     gc = J' * data_residual;
     norm_gc = norm(gc);
     
-    % GN search direction
-%     gn_dir = (J' * J + lambda * (W' * W)) \ gc;
-    gn_dir = (J' * J + lambda * R) \ gc;
-    gn_dir = P' * gn_dir;
+    % GN search direction, restricted to active parameters
+    %
+    gn_dir = P' * ((J' * J + lambda * WTW) \ gc);
     
     if verbose
         fprintf('It. %3d: ', gn_it_counter);
         fprintf('JTr: %1.6e ', norm_gc);
     end
     
-    % LS
+    % Line Search:
+    % Take a fraction of the GN direction and evaluate the response
+    %
     step_size = 1.0;
-    % take a fraction of the GN direction and evaluate the response d_
     log_p_proposed = log_p + step_size * gn_dir;
     d_proposed = getData(exp(log_p_proposed));
     
-    obj_fn_proposed = objective_function(residual(dobs, d_proposed, a), W, log_p_proposed - log_p_ref, lambda);
+    obj_fn_proposed = objective_function(...
+        residual(dobs, d_proposed, a));
     obj_fn_diff = obj_fn_current - obj_fn_proposed;
     
     % Directional derivative for Armijo rule
-    dir_deriv = gn_dir' * (P' * gc);
+    % must be negative for descent direction
+    dir_deriv = -gn_dir' * (P' * gc);
     
     gn_it_counter = gn_it_counter + 1;
     
@@ -191,47 +192,68 @@ while (norm_gc > tol) && ...
         end
         log_p_proposed = log_p + step_size * gn_dir;
         d_proposed = getData(exp(log_p_proposed));
-        obj_fn_proposed = objective_function(residual(dobs, d_proposed, a), W, log_p_proposed - log_p_ref, lambda);
+        obj_fn_proposed = objective_function(...
+            residual(dobs, d_proposed, a));
         obj_fn_diff = obj_fn_current - obj_fn_proposed;
     end
     
-    % Update
+    obj_rel_drop = obj_fn_diff / obj_fn_current;
+    
+    % Update parameter after line search
+    %
     rho = exp(log_p_proposed);
     log_p = log_p_proposed;
-    d = d_proposed;
-    data_residual = residual(dobs, d, a); %scalefn(dobs, a) - scalefn(d, a);
-    obj_fn_current = obj_fn_proposed;
-    obj_fn(gn_it_counter) = obj_fn_current;
     
-    % Reduce lambda when difference in objective function falls below droptol
-    if abs(obj_fn_diff) < lambda_droptol
+    % Update current model response, data residual, and objective function
+    %
+    d = d_proposed;
+    data_residual = residual(dobs, d, a);
+    obj_fn_current = obj_fn_proposed;
+    
+    % Decrease regularization parameter lambda whenever the relative change
+    % of the objective function falls below a given drop tolerance.
+    % In the first Gauss-Newton iteration, the given value of lambda should
+    % always be accepted.
+    %
+    if obj_rel_drop < lambda_droptol && gn_it_counter > 1
         lambda = lambda * lambda_scaling_factor;
     end
     
+    % Reject further decrease of lambda when a given threshold is reached
+    %
     if lambda < lambda_min
         lambda = lambda_min;
     end
     
+    % Book-keeping
+    %
+    lambda_history(gn_it_counter) = lambda;
+    obj_fn(gn_it_counter) = obj_fn_current;
+    
     if verbose
-        fprintf('LS: alpha=%1.3e lambda %1.3e obj_fn %1.3e diff_obj %1.3e\n', ...
-            step_size, lambda, obj_fn_current, obj_fn_diff);
+        fprintf('LS: alpha=%1.3e lambda %1.3e obj_fn %1.3e obj_rel_drop %1.3e\n', ...
+            step_size, lambda, obj_fn_current, obj_rel_drop);
         
         figure(1);
         loglog(t, abs(dobs), t, abs(d));
         plotTransient(t, dobs, [], 'r');
         hold on
         plotTransient(t, d, [], 'b');
-        %     grid('on');
         legend('dobs', '', 'd', '');
         hold off
-        set(gcf, 'position', [1 565 560 420]);
+        set(gcf, 'position', [1 50 560 420]);
         figure(2);
         plot_model(rho, thk);
-        set(gcf, 'Position', [613 549 560 419]);
+        set(gcf, 'Position', [613 50 560 419]);
         drawnow();
     end
 end
 
-% Return value
+% Return values of model parameters, objective function convergence, and
+% change of lambda during iterations
+%
 m = rho;
+lambda_history = lambda_history(1:gn_it_counter);
 obj_fn = obj_fn(1:gn_it_counter);
+
+% EOF
